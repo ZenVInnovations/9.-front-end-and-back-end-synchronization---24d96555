@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watch Party</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* CSS styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            transition: background-color 0.3s ease;
+        }
+
+        #participants-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #participants-list::-webkit-scrollbar-track {
+            background: #4a5568; /* Tailwind gray-700 */
+            border-radius: 10px;
+        }
+
+        #participants-list::-webkit-scrollbar-thumb {
+            background: #718096; /* Tailwind gray-600 */
+            border-radius: 10px;
+        }
+
+        #participants-list::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0; /* Tailwind gray-500 */
+        }
+
+        #participants-list li {
+            padding: 4px 0;
+            color: #e2e8f0; /* Tailwind cool-gray-300 or similar */
+        }
+
+        #media-player {
+            display: block; /* Remove extra space below if it's an inline element */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-3xl bg-gray-800 p-6 sm:p-8 rounded-xl shadow-2xl space-y-6">
+        <header class="text-center">
+            <h1 class="text-3xl sm:text-4xl font-bold text-purple-400">Media Watch Party</h1>
+        </header>
+
+        <section id="room-management" class="space-y-4">
+            <div>
+                <label for="media-url" class="block text-sm font-medium text-gray-300 mb-1">Media URL (e.g., .mp4, .mp3 direct link):</label>
+                <input type="text" id="media-url" placeholder="Enter direct media URL" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-colors">
+            </div>
+            <button id="create-room-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-gray-800">
+                Create Room
+            </button>
+            
+            <hr class="border-gray-700 my-6">
+
+            <div>
+                <label for="room-id-input" class="block text-sm font-medium text-gray-300 mb-1">Room ID to Join:</label>
+                <input type="text" id="room-id-input" placeholder="Enter Room ID" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-colors">
+            </div>
+            <button id="join-room-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800">
+                Join Room
+            </button>
+        </section>
+
+        <section id="media-player-section" class="hidden mt-8 space-y-4">
+            <h2 class="text-2xl font-semibold text-center">Room ID: <span id="display-room-id" class="text-yellow-400"></span></h2>
+            
+            <div class="bg-black rounded-lg overflow-hidden shadow-lg">
+                <video id="media-player" class="w-full h-auto max-h-[60vh]" controlslist="nodownload" controls>
+                    Your browser does not support the video tag.
+                </video>
+                </div>
+
+            <div id="controls" class="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-3">
+                </div>
+            
+            <div id="volume-control" class="flex items-center justify-center space-x-2 mt-2">
+                <span class="text-sm text-gray-400">Volume:</span>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1" class="w-32 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
+            </div>
+
+            <div class="text-center mt-4">
+                <p class="text-sm text-gray-400">Role: <span id="user-role" class="font-semibold"></span></p>
+                <p class="text-sm text-gray-400">Status: <span id="player-status" class="font-semibold"></span></p>
+            </div>
+        </section>
+
+        <section id="participants-section" class="hidden mt-6">
+            <h3 class="text-xl font-semibold mb-2 text-center">Participants (<span id="participants-count">0</span>)</h3>
+            <ul id="participants-list" class="list-disc list-inside pl-5 bg-gray-700 p-3 rounded-lg max-h-32 overflow-y-auto">
+                </ul>
+        </section>
+
+        <div id="notifications" class="mt-4 text-center text-sm text-yellow-300"></div>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <script>
+        // Client-side JavaScript
+        document.addEventListener('DOMContentLoaded', () => {
+            const socket = io(); // Connect to the Socket.IO server
+
+            // DOM Elements for Room Management
+            const mediaUrlInput = document.getElementById('media-url');
+            const createRoomBtn = document.getElementById('create-room-btn');
+            const roomIdInput = document.getElementById('room-id-input');
+            const joinRoomBtn = document.getElementById('join-room-btn');
+            const roomManagementSection = document.getElementById('room-management');
+
+            // DOM Elements for Media Player
+            const mediaPlayerSection = document.getElementById('media-player-section');
+            const displayRoomId = document.getElementById('display-room-id');
+            const mediaPlayer = document.getElementById('media-player'); // This is a <video> element
+            const userRoleDisplay = document.getElementById('user-role');
+            const playerStatusDisplay = document.getElementById('player-status');
+            const volumeSlider = document.getElementById('volume-slider');
+
+
+            // DOM Elements for Participants
+            const participantsSection = document.getElementById('participants-section');
+            const participantsList = document.getElementById('participants-list');
+            const participantsCount = document.getElementById('participants-count');
+
+            // Notifications
+            const notificationsDiv = document.getElementById('notifications');
+
+            let currentRoomId = null;
+            let isHost = false;
+            let mediaType = 'video'; // Default to video, can be 'audio'
+
+            // --- Room Management ---
+            createRoomBtn.addEventListener('click', () => {
+                const mediaUrl = mediaUrlInput.value.trim();
+                if (!mediaUrl) {
+                    showNotification('Please enter a media URL.', 'error');
+                    return;
+                }
+                // Basic URL validation (checks for common video/audio extensions)
+                if (!isValidMediaUrl(mediaUrl)) {
+                    showNotification('Please enter a valid direct link to an .mp4, .webm, .ogg, .mp3, or .wav file.', 'error');
+                    return;
+                }
+                mediaType = getMediaType(mediaUrl);
+                socket.emit('createRoom', { mediaUrl, mediaType });
+            });
+
+            joinRoomBtn.addEventListener('click', () => {
+                const roomIdToJoin = roomIdInput.value.trim();
+                if (!roomIdToJoin) {
+                    showNotification('Please enter a Room ID.', 'error');
+                    return;
+                }
+                socket.emit('joinRoom', { roomId: roomIdToJoin });
+            });
+
+            // --- Socket.IO Event Handlers ---
+            socket.on('roomCreated', (data) => {
+                currentRoomId = data.roomId;
+                isHost = true;
+                userRoleDisplay.textContent = 'Host';
+                displayRoomId.textContent = currentRoomId;
+                showNotification(`Room created! ID: ${currentRoomId}. Share this ID with others.`, 'success');
+                switchToMediaPlayerView();
+                loadMedia(data.mediaUrl, data.mediaType);
+                updatePlayerStatus('Waiting for media to load...');
+            });
+
+            socket.on('joinedRoom', (data) => {
+                currentRoomId = data.roomId;
+                isHost = false;
+                userRoleDisplay.textContent = 'Participant';
+                displayRoomId.textContent = currentRoomId;
+                showNotification(`Joined Room: ${currentRoomId}`, 'success');
+                switchToMediaPlayerView();
+                loadMedia(data.mediaUrl, data.mediaType, () => {
+                    // Sync with host after media is ready
+                    if (data.currentTime) {
+                         mediaPlayer.currentTime = data.currentTime;
+                    }
+                    if (data.playbackState === 'playing') {
+                        mediaPlayer.play().catch(e => console.warn("Autoplay prevented:", e));
+                    } else {
+                        mediaPlayer.pause();
+                    }
+                    updatePlayerStatus(data.playbackState === 'playing' ? 'Playing' : 'Paused');
+                });
+            });
+
+            socket.on('roomNotFound', () => {
+                showNotification('Room not found. Please check the ID.', 'error');
+            });
+
+            socket.on('roomFull', () => {
+                showNotification('This room is currently full.', 'error');
+            });
+
+            socket.on('hostAssigned', () => {
+                isHost = true;
+                userRoleDisplay.textContent = 'Host (New)';
+                showNotification('You are now the host of this room.', 'info');
+                addHostControls();
+            });
+            
+            socket.on('playbackUpdate', (data) => {
+                if (isHost) return; // Host controls their player directly
+
+                switch (data.action) {
+                    case 'play':
+                        mediaPlayer.play().catch(e => console.warn("Autoplay prevented by browser:", e));
+                        updatePlayerStatus('Playing');
+                        break;
+                    case 'pause':
+                        mediaPlayer.pause();
+                        updatePlayerStatus('Paused');
+                        break;
+                    case 'seek':
+                        if (Math.abs(mediaPlayer.currentTime - data.time) > 0.5) { // Only seek if significantly different
+                            mediaPlayer.currentTime = data.time;
+                        }
+                        updatePlayerStatus(mediaPlayer.paused ? 'Paused (Seeked)' : 'Playing (Seeked)');
+                        break;
+                    case 'load': // Host changed media
+                        loadMedia(data.mediaUrl, data.mediaType, () => {
+                             if (data.currentTime) mediaPlayer.currentTime = data.currentTime;
+                             if (data.playbackState === 'playing') mediaPlayer.play().catch(e => console.warn("Autoplay prevented:", e));
+                             else mediaPlayer.pause();
+                        });
+                        showNotification('Host changed the media.', 'info');
+                        break;
+                }
+            });
+            
+            socket.on('initialSync', (data) => {
+                if (isHost) return;
+                console.log('Received initial sync:', data);
+                // Ensure media is loaded before trying to sync
+                if (mediaPlayer.src !== data.mediaUrl) {
+                    loadMedia(data.mediaUrl, data.mediaType, () => syncPlayerState(data));
+                } else {
+                    syncPlayerState(data);
+                }
+            });
+
+            function syncPlayerState(data) {
+                mediaPlayer.currentTime = data.currentTime;
+                if (data.playbackState === 'playing' && mediaPlayer.paused) {
+                    mediaPlayer.play().catch(e => console.warn("Autoplay prevented on sync:", e));
+                } else if (data.playbackState === 'paused' && !mediaPlayer.paused) {
+                    mediaPlayer.pause();
+                }
+                updatePlayerStatus(data.playbackState === 'playing' ? 'Playing' : 'Paused');
+            }
+
+            socket.on('participantsUpdate', (participants) => {
+                participantsList.innerHTML = ''; // Clear current list
+                participantsCount.textContent = participants.length;
+                participants.forEach(participant => {
+                    const li = document.createElement('li');
+                    li.textContent = `${participant.id.substring(0,6)}... ${participant.isHost ? '(Host)' : ''}`;
+                    li.className = 'text-gray-300 py-1';
+                    participantsList.appendChild(li);
+                });
+            });
+
+            socket.on('userDisconnected', (data) => {
+                showNotification(`User ${data.userId.substring(0,6)}... left the room.`, 'info');
+            });
+            
+            socket.on('connect_error', (err) => {
+                showNotification(`Connection error: ${err.message}`, 'error');
+                console.error("Connection Error:", err);
+            });
+
+            // --- Media Player Logic ---
+            function loadMedia(url, type, callback) {
+                mediaType = type; // Update global mediaType
+                // Check if we need to swap video/audio tag (more robust handling might be needed)
+                // For this basic version, we assume the #media-player is a <video> tag and can handle audio too.
+                // If strictly separate <audio> tag is needed, DOM manipulation would be required here.
+                mediaPlayer.src = url;
+                mediaPlayer.load(); // Important to load the new source
+
+                // Wait for media to be ready before applying sync or allowing host controls
+                const onMediaReady = () => {
+                    mediaPlayer.removeEventListener('canplay', onMediaReady);
+                    mediaPlayer.removeEventListener('loadedmetadata', onMediaReady); // loadedmetadata is often better for duration
+                    if (isHost) {
+                        addHostControls();
+                    } else {
+                        removeHostControls(); // Participants shouldn't control directly
+                    }
+                    if (typeof callback === 'function') {
+                        callback();
+                    }
+                };
+                mediaPlayer.addEventListener('canplay', onMediaReady);
+                mediaPlayer.addEventListener('loadedmetadata', onMediaReady);
+
+                mediaPlayer.onerror = (e) => {
+                    showNotification('Error loading media. Check the URL or file format.', 'error');
+                    console.error("Media Error:", e);
+                    updatePlayerStatus('Error loading media');
+                };
+            }
+
+            function addHostControls() {
+                mediaPlayer.addEventListener('play', handleHostPlay);
+                mediaPlayer.addEventListener('pause', handleHostPause);
+                mediaPlayer.addEventListener('seeked', handleHostSeeked);
+                mediaPlayer.addEventListener('timeupdate', handleHostTimeUpdate); // For more frequent sync if desired
+                mediaPlayer.controls = true; // Ensure host has controls
+                updatePlayerStatus(mediaPlayer.paused ? 'Paused' : 'Playing');
+            }
+
+            function removeHostControls() {
+                mediaPlayer.removeEventListener('play', handleHostPlay);
+                mediaPlayer.removeEventListener('pause', handleHostPause);
+                mediaPlayer.removeEventListener('seeked', handleHostSeeked);
+                mediaPlayer.removeEventListener('timeupdate', handleHostTimeUpdate);
+                // For participants, you might want to visually indicate controls are synced
+                // mediaPlayer.controls = false; // Or style them to look disabled
+            }
+
+            function handleHostPlay() {
+                if (!isHost || !currentRoomId) return;
+                socket.emit('playbackAction', { roomId: currentRoomId, action: 'play', time: mediaPlayer.currentTime });
+                updatePlayerStatus('Playing');
+            }
+
+            function handleHostPause() {
+                if (!isHost || !currentRoomId) return;
+                socket.emit('playbackAction', { roomId: currentRoomId, action: 'pause', time: mediaPlayer.currentTime });
+                updatePlayerStatus('Paused');
+            }
+
+            function handleHostSeeked() {
+                if (!isHost || !currentRoomId) return;
+                socket.emit('playbackAction', { roomId: currentRoomId, action: 'seek', time: mediaPlayer.currentTime });
+                updatePlayerStatus(mediaPlayer.paused ? 'Paused (Seeked)' : 'Playing (Seeked)');
+            }
+            
+            // Optional: More frequent time updates from host
+            let lastTimeUpdateSent = 0;
+            function handleHostTimeUpdate() {
+                if (!isHost || !currentRoomId || mediaPlayer.paused) return;
+                const now = Date.now();
+                // Send time update every 2 seconds if playing
+                if (now - lastTimeUpdateSent > 2000) { 
+                    socket.emit('playbackAction', { roomId: currentRoomId, action: 'timeUpdate', time: mediaPlayer.currentTime });
+                    lastTimeUpdateSent = now;
+                }
+            }
+
+            mediaPlayer.addEventListener('ended', () => {
+                updatePlayerStatus('Media Ended');
+                if (isHost) {
+                    // Optionally, inform server/clients media has ended
+                    socket.emit('playbackAction', { roomId: currentRoomId, action: 'ended', time: mediaPlayer.duration });
+                }
+            });
+
+            volumeSlider.addEventListener('input', (e) => {
+                mediaPlayer.volume = e.target.value;
+            });
+
+
+            // --- UI Helper Functions ---
+            function switchToMediaPlayerView() {
+                roomManagementSection.classList.add('hidden');
+                mediaPlayerSection.classList.remove('hidden');
+                participantsSection.classList.remove('hidden');
+            }
+
+            function showNotification(message, type = 'info') {
+                notificationsDiv.textContent = message;
+                notificationsDiv.className = `mt-4 text-center text-sm p-2 rounded-md ${
+                    type === 'error' ? 'bg-red-500 text-white' : 
+                    type === 'success' ? 'bg-green-500 text-white' : 
+                    'bg-blue-500 text-white'
+                }`;
+                setTimeout(() => {
+                    notificationsDiv.textContent = '';
+                    notificationsDiv.className = 'mt-4 text-center text-sm';
+                }, 5000); // Notification disappears after 5 seconds
+            }
+
+            function updatePlayerStatus(statusText) {
+                playerStatusDisplay.textContent = statusText;
+            }
+
+            function isValidMediaUrl(url) {
+                // Basic check for common media file extensions or data URLs
+                // This is not foolproof and can be expanded.
+                return /\.(mp4|webm|ogg|mp3|wav)$/i.test(url) || url.startsWith('data:video') || url.startsWith('data:audio');
+            }
+
+            function getMediaType(url) {
+                if (/\.(mp3|wav|ogg)$/i.test(url) || url.startsWith('data:audio')) { // .ogg can be video or audio, but often audio
+                    return 'audio';
+                }
+                return 'video'; // Default to video for .mp4, .webm, or unknown .ogg
+            }
+
+        });
+    </script>
+</body>
+</html>
+<p class="text-center text-gray-400 mt-4">Created by: Raj Roshan</p>
+<img src="raj.jpg" alt="Raj's Photo" class="w-24 h-24 rounded-full mx-auto mt-4">
