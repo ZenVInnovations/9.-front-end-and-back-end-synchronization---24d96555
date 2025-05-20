@@ -1,4 +1,5 @@
 // server.js
+// this works for the backend part of the app
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
